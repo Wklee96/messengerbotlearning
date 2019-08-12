@@ -3,7 +3,12 @@ var express = require('express'),
     http = require('http'),
     request = require('request'),
     app = express(),
+    fs = require('fs'),
     token = 'EAAEoEdeyfRABAMCTHGM1zhPyZBxemmGETu41fIM8iSWHlcQCuul4T7ZCEf7TSmgqMVBAy7utSHlTlZB2eGdBZBCZBx1yuqo6l1oZAaq9t8fOdjyTkxolURj7wHMlG2GpRjV8kvppZAm0LQWZAbyrcK1m2JWWXV9NWIPM5D8iYeKrWI3KrP5kaVqO';
+    ssl0pts = {
+	"key":fs.readFileSync("/etc/letsencrypt/live/bluenode.xyz/privkey.pem"),
+	"cert":fs.readFileSync('/etc/letsencrypt/live/bluenode.xyz/fullchain.pem')
+    }
 
 app.use(bodyParser.json({}));
 
@@ -33,7 +38,7 @@ app.get('/health', function(req, res) {
 });
 
 // set port
-app.set('port', process.env.PORT || 8080);
+app.set('port', process.env.PORT || 80);
 // start the server
 http.createServer(app).listen(app.get('port'), function(){
     console.log('Express server listening on port ' + app.get('port'));
@@ -90,5 +95,25 @@ app.speechHandler = function(text, id, cb) {
         console.log('Speech Handler Success: ', JSON.stringify(body))
         cb(body.result.fulfillment.speech);
       }
+    });
+}
+
+app.initUserPurchase = function(data, db, callback) {
+    // Get the documents collection
+    var collection = db.collection('purchase');
+    // Insert some documents
+    collection.insertOne(data, function(err, result) {
+	if (err) throw err;
+	callback(result);
+    });
+}
+
+app.findDocument = function(sessionID, db, callback) {
+    // Get the documents collection
+    var collection = db.collection('purchase');
+    // Find some documents
+    collection.findOne({'session': sessionID}, function(err, doc) {
+        if(err){ throw err; }
+	callback(doc);
     });
 }
