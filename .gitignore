@@ -1,3 +1,5 @@
 node_modules
 .env
 adxperts.pem
+npm-debug.log
+certbot-auto
