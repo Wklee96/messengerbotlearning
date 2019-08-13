@@ -10,6 +10,9 @@ var express = require('express'),
       "cert":fs.readFileSync('/etc/letsencrypt/live/bluenode.xyz/fullchain.pem')
     }
 
+var MongoClient = require('mongodb').MongoClient;
+var url = 'cluster0-shard-00-00-f52b9.mongodb.net:27017';
+
 app.use(bodyParser.json({}));
 
 app.post('/fb', function(req, res){
