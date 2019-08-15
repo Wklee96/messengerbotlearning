@@ -1,47 +1,36 @@
 var express = require('express'),
     bodyParser = require('body-parser'),
-    http = require('http'),
+    https = require('https'),
     request = require('request'),
     app = express(),
-    fs = require('fs'),
-    token = 'EAAEoEdeyfRABAMCTHGM1zhPyZBxemmGETu41fIM8iSWHlcQCuul4T7ZCEf7TSmgqMVBAy7utSHlTlZB2eGdBZBCZBx1yuqo6l1oZAaq9t8fOdjyTkxolURj7wHMlG2GpRjV8kvppZAm0LQWZAbyrcK1m2JWWXV9NWIPM5D8iYeKrWI3KrP5kaVqO';
-    ssl0pts = {
-      "key":fs.readFileSync("/etc/letsencrypt/live/bluenode.xyz/privkey.pem"),
-      "cert":fs.readFileSync('/etc/letsencrypt/live/bluenode.xyz/fullchain.pem')
-    }
+    token = 'EAAEoEdeyfRABALlxuZCSBKCNaGi1YlJC06bvhSMzzfXSwAfY6FqxlWsqt1NATCeI8imG1wrwuZCUDtdm9ZAb7eFCJn0mZBuIEtaTx0CLenNRXpx1c37mB69WqMxJjrAFnubiZA6u6rDa8oNnqt6aEJ4ljsEIrt4aNZAZAtZBAGtaIwZDZD';
 
 var MongoClient = require('mongodb').MongoClient;
-var url = 'cluster0-shard-00-00-f52b9.mongodb.net:27017';
+var url = 'mongodb+srv://lweikang96:S9605967a@cluster0-f52b9.mongodb.net/test?retryWrites=true&w=majority';
 
 app.use(bodyParser.json({}));
 
 app.post('/fb', function(req, res){
-    var id = req.body.entry[0].messaging[0].sender.id;
-    var text = req.body.entry[0].messaging[0].message.text;
-    console.log("Post /fb:", JSON.stringify(req.body))  
-    // here we add the logic to insert the user data into the database
-    MongoClient.connect(url, function(err, db) {
-      if(err) {
-        console.log(err)
+  console.log("Post / fb:", JSON.stringify(req.body))  
+  if (req.body.entry[0].standby) {
+    console.log("ON STANDBY");
+  } else {
+    var message = req.body.entry[0].messaging[0];
+    var id = message.sender.id;
+    //dbInitialisation(id);
+    if (message.message) {
+      if (message.message.quick_reply) {
+        handleInitialResponse(message, id);
+      } else {
+        handleResponseFlow(message, id);  
       }
-      app.findDocument(id, db, function(doc) {
-        if(doc === null){
-          app.initUserPurchase({session:id, Purchase:[]}, db, function(doc){
-            db.close();
-          })
-        }
-      });
-    });
-    app.speechHandler(text, id, function(speech){
-      app.messageHandler(speech, id, function(result){
-        console.log("Async Handled: " + result)
-      })
-    })
+    }
     res.send(req.body)
+  }
 })
 
 app.get('/fb', function(req, res) {
-    if (req.query['hub.verify_token'] === 'abc') {
+    if (req.query['hub.verify_token'] === 'adxperts') {
         res.send(req.query['hub.challenge']);
     } else {
         res.send('Error, wrong validation token');
@@ -54,19 +43,68 @@ app.get('/health', function(req, res) {
 });
 
 // set port
-app.set('port', process.env.PORT || 80);
+app.set('port', process.env.PORT || 443);
 // start the server
 http.createServer(app).listen(app.get('port'), function(){
     console.log('Express server listening on port ' + app.get('port'));
 });
 
 app.messageHandler = function(text, id, cb) {
+  if (text === "handover") {
+    var data = {
+      "recipient": {
+        "id": id
+      },
+      "target_app_id": "263902037430900"
+    }
+    var reqObj = {
+      url: 'https://graph.facebook.com/v2.6/me/pass_thread_control',
+      qs: { access_token: token },
+      method: 'POST',
+      json: data
+    };
+    request(reqObj, function (error, response, body) {
+      if (error) {
+        //console.log('Error sending message: ', JSON.stringify(error));
+        cb(false);
+      }
+      else if (response.body.error) {
+        //console.log("API Error: " + JSON.stringify(response.body.error));
+        cb(false);
+      }
+      else {
+        cb(true);
+      }
+    });
+  } else {
+    sendMessage(id, text, cb);
+  }
+}
+
+app.collectionMessage = function(id, cb) {
   var data = {
     "recipient":{
         "id":id
     },
     "message":{
-        "text":text
+      "text":"Please choose the method of collection for your delivery",
+      "quick_replies": [
+          {
+            "content_type": "text",
+            "title": "Home Delivery",
+            "payload": "purchase_hd"
+          },
+          {
+            "content_type": "text",
+            "title": "7-11 Collection",
+            "payload": "purchase_711"
+          },
+          {
+            "content_type": "text",
+            "title": "FamilyMart Collection",
+            "payload": "purchase_fm"
+          }
+      ]
     }
   };
   var reqObj = {
@@ -75,8 +113,19 @@ app.messageHandler = function(text, id, cb) {
     method: 'POST',
     json: data
   };
+  var typingObj = {
+    url: 'https://graph.facebook.com/v2.6/me/messages',
+    qs: {access_token:token},
+    method: 'POST',
+    json: {
+      "recipient":{
+          "id":id
+      },
+      "sender_action":"typing_on"
+    }
+  }
   console.log("Message Handler:", JSON.stringify(reqObj))
-  request(reqObj, function(error, response, body) {
+  request(typingObj , function(error, response, body) {
     if (error) {
       //console.log('Error sending message: ', JSON.stringify(error));
       cb(false)
@@ -86,7 +135,18 @@ app.messageHandler = function(text, id, cb) {
     } else{
       cb(true)
     }
-  });
+  })
+  setTimeout(() => request(reqObj, function(error, response, body) {
+    if (error) {
+      //console.log('Error sending message: ', JSON.stringify(error));
+      cb(false)
+    } else if (response.body.error) {
+      //console.log("API Error: " + JSON.stringify(response.body.error));
+      cb(false)
+    } else{
+      cb(true)
+    }
+  }), 1500)
 }
 
 app.speechHandler = function(text, id, cb) {
@@ -107,29 +167,154 @@ app.speechHandler = function(text, id, cb) {
     if (error) {
       console.log('Error sending message: ', JSON.stringify(error));
       cb(false)
+    } else if (body.result.metadata.isFallbackIntent === "true") {
+      console.log('Fallback intent detected, passing protocol')
+      cb(body.result.fulfillment.speech)
     } else {
       console.log('Speech Handler Success: ', JSON.stringify(body))
+      var params = body.result.parameters;
+      if (params.productName !== "" && params.cod !== "" && params.address !== "" && params.phone !== "") {
+        MongoClient.connect(url, function(err, client) {
+          var db = client.db('purchaseOrder');
+          if (err) {
+            console.log(err);
+          }
+          app.insertPurchase({sessionID: id, productName: params.productName, cod: params.cod, address: params.address, phone: params.phone}, db, function(doc) {
+            client.close();
+          })
+        })
+      }
       cb(body.result.fulfillment.speech);
     }
   });
 }
 
-app.initUserPurchase = function(data, db, callback) {
+function dbInitialisation(id) {
+  MongoClient.connect(url, function (err, client) {
+    var db = client.db('purchaseOrder');
+    if (err) {
+      console.log('db connection error:', err);
+    } else {
+      app.findDocument(id, db, function (doc) {
+        if (doc === null) {
+          app.initUserPurchase({ session: id, purchase: [] }, db, function (doc) {
+            client.close();
+          });
+        }
+      });
+    }
+  });
+}
+
+function sendMessage(id, text, cb) {
+  var data = {
+    "recipient": {
+      "id": id
+    },
+    "message": {
+      "text": text
+    }
+  };
+  var reqObj = {
+    url: 'https://graph.facebook.com/v2.6/me/messages',
+    qs: { access_token: token },
+    method: 'POST',
+    json: data
+  };
+  var typingObj = {
+    url: 'https://graph.facebook.com/v2.6/me/messages',
+    qs: { access_token: token },
+    method: 'POST',
+    json: {
+      "recipient": {
+        "id": id
+      },
+      "sender_action": "typing_on"
+    }
+  };
+  console.log("Message Handler:", JSON.stringify(reqObj));
+  request(typingObj, function (error, response, body) {
+    if (error) {
+      //console.log('Error sending message: ', JSON.stringify(error));
+      cb(false);
+    }
+    else if (response.body.error) {
+      //console.log("API Error: " + JSON.stringify(response.body.error));
+      cb(false);
+    }
+    else {
+      cb(true);
+    }
+  });
+  setTimeout(() => request(reqObj, function (error, response, body) {
+    if (error) {
+      //console.log('Error sending message: ', JSON.stringify(error));
+      cb(false);
+    }
+    else if (response.body.error) {
+      //console.log("API Error: " + JSON.stringify(response.body.error));
+      cb(false);
+    }
+    else {
+      cb(true);
+    }
+  }), 1500);
+}
+
+function handleResponseFlow(message, id) {
+  var text = message.message.text;
+  app.speechHandler(text, id, function (speech) {
+    app.messageHandler(speech, id, function (result) {
+      console.log("Async Handled: " + result);
+    });
+  });
+}
+
+function handleInitialResponse(message, id) {
+  if (message.message.quick_reply.payload.includes("purchase_yes")) {
+    console.log("hey", message.message.quick_reply.payload)
+    app.speechHandler("My product is " + message.message.quick_reply.payload.substring(13), id, function(speech) {
+      app.collectionMessage(id, function (result) {
+        console.log("Async Handled: " + result);
+      });
+    })
+  }
+  else if (message.message.quick_reply.payload == "purchase_hd") {
+    app.speechHandler("I want home delivery", id, function (speech) {
+      app.messageHandler(speech, id, function (result) {
+        console.log("Async Handled: " + result);
+      });
+    });
+  }
+}
+
+app.insertPurchase = function(data, db, callback) {
   // Get the documents collection
   var collection = db.collection('purchase');
-  // Insert some documents
+  // Insert document
   collection.insertOne(data, function(err, result) {
-	if (err) throw err;
-	callback(result);
-    });
+    if (err) throw err;
+    callback(result);
+  })
 }
 
 app.findDocument = function(sessionID, db, callback) {
-    // Get the documents collection
-    var collection = db.collection('purchase');
-    // Find some documents
-    collection.findOne({'session': sessionID}, function(err, doc) {
-        if(err){ throw err; }
-	      callback(doc);
-    });
+  // Get the documents collection
+  var collection = db.collection('purchase');
+  // Find document
+  collection.findOne({'session': sessionID}, function(err, doc) {
+    if (err) throw err;
+    callback(doc);
+  })
 }
+
+// app.insertPurchase = function(data, id, db, callback) {
+//   // Get the documents collection
+//   var collection = db.collection('purchase');
+//   // Update document
+//   collection.insertOne({'session': id}, {$set: data}, {upsert: true}, function(err, res) {
+//     if (err) throw err;
+//     console.log("Purchase added", data);
+//     callback(res);
+//   })
+// }
