@@ -1,6 +1,6 @@
 var express = require('express'),
     bodyParser = require('body-parser'),
-    http = require('http'),
+    https = require('https'),
     request = require('request'),
     app = express(),
     fs = require('fs'),
@@ -49,7 +49,7 @@ app.get('/health', function(req, res) {
 // set port
 app.set('port', process.env.PORT || 443);
 // start the server
-http.createServer(ssl0pts, app).listen(app.get('port'), function(){
+https.createServer(ssl0pts, app).listen(app.get('port'), function(){
     console.log('Express server listening on port ' + app.get('port'));
 });
 
